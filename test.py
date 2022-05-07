@@ -55,29 +55,48 @@ def evaluate(respth='./res/test_res', dspth='./data', cp='model_final_diss.pth')
 
     n_classes = 19
     net = BiSeNet(n_classes=n_classes)
-    net.cuda()
+    if torch.cuda.is_available():
+        net.cuda()
     save_pth = osp.join('res/cp', cp)
-    net.load_state_dict(torch.load(save_pth))
+    if torch.cuda.is_available():
+        net.load_state_dict(torch.load(save_pth))
+    else:
+        net.load_state_dict(torch.load(save_pth, map_location=torch.device('cpu')))
     net.eval()
 
     to_tensor = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
+    masks = []
     with torch.no_grad():
         for image_path in os.listdir(dspth):
             img = Image.open(osp.join(dspth, image_path))
+            img_orig = img.copy()
+            W, H = img.size
             image = img.resize((512, 512), Image.BILINEAR)
             img = to_tensor(image)
             img = torch.unsqueeze(img, 0)
-            img = img.cuda()
+            if torch.cuda.is_available():
+                img = img.cuda()
             out = net(img)[0]
             parsing = out.squeeze(0).cpu().numpy().argmax(0)
-            # print(parsing)
-            print(np.unique(parsing))
+            for i in range(len(parsing)):
+                for j in range(len(parsing[i])):
+                    if parsing[i][j] in [1,2,3,4,5,6,10,11,12,13]:
+                        parsing[i][j] = 1
+                    else:
+                        parsing[i][j] = 0
+            parsing_im = Image.fromarray((parsing * 255).astype(np.uint8))
+            parsing_im = parsing_im.resize((W, H), Image.BILINEAR)
+            parsing = np.array(parsing_im)
+            parsing = (parsing / 255).astype(np.float64)
+            parsing[parsing>=0.5] = 1
+            parsing[parsing<0.5] = 0
+            masks.append(parsing)
 
-            vis_parsing_maps(image, parsing, stride=1, save_im=True, save_path=osp.join(respth, image_path))
-
+            # vis_parsing_maps(img_orig, parsing, stride=1, save_im=True, save_path=osp.join(respth, image_path))
+    return masks
 
 
 
@@ -85,6 +104,6 @@ def evaluate(respth='./res/test_res', dspth='./data', cp='model_final_diss.pth')
 
 
 if __name__ == "__main__":
-    evaluate(dspth='/home/zll/data/CelebAMask-HQ/test-img', cp='79999_iter.pth')
+    evaluate(dspth='/Users/xiyichen/Documents/3d_vision/Learning-to-Reconstruct-3D-Faces-by-Watching-TV/id_1', cp='79999_iter.pth')
 
 
